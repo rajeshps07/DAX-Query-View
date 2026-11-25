@@ -1,0 +1,19 @@
+// Create relationship between the tables
+var fromColumn = Model.Tables["<table1>"].Columns["<table1 column>"]; // Enter the 'from' part of the relationship
+var toColumn = Model.Tables["<table2>"].Columns["<table2 column>"]; // Enter the 'to' part of the relationship
+
+// If the relationship above exists, delete it
+if (Model.Relationships.Any(a => a.FromColumn == fromColumn && a.ToColumn == toColumn))
+{
+    Model.Relationships.First(a => a.FromColumn == fromColumn && a.ToColumn == toColumn).Delete();
+}
+// Else, create the relationship
+else
+{
+    var r = Model.AddRelationship();
+    r.FromColumn = fromColumn;
+    r.ToColumn = toColumn;
+    r.FromCardinality = RelationshipEndCardinality.Many;
+    r.ToCardinality = RelationshipEndCardinality.One;
+    r.CrossFilteringBehavior = CrossFilteringBehavior.OneDirection; // CrossFilteringBehavior.BothDirections
+}
