@@ -1,0 +1,412 @@
+/* ################################################################################################ */
+/*
+    1. Tables
+    2. Columns
+    3. Calculated Columns
+    4. Calculated Tables
+    5. Measures
+    6. Parameters
+    7. Relationships
+    8. Relationships (From/To Column Data Types)
+    9. Partitions
+    10. Partitions (with Row Count)
+    11. Roles
+    12. Table Permissions
+    13. Column Permissions
+    14. Dependencies
+    15. Dependency Diagram / Dependency Matrix
+    16. Columns Catalog (Detailed)
+*/
+
+// 1. Tables:
+EVALUATE
+SELECTCOLUMNS (
+    INFO.VIEW.TABLES (),
+    "Table Name", [Name],
+    [StorageMode],
+    [Expression],
+    [IsPrivate],
+    [Description]
+)
+ORDER BY
+    [StorageMode],
+    [Table Name]
+
+// 2. Columns:
+EVALUATE
+VAR ColumnInfo =
+    FILTER ( INFO.VIEW.COLUMNS (), [DataCategory] <> "RowNumber" )
+VAR TableCounts =
+    GROUPBY ( ColumnInfo, [Table], "# columns", COUNTX ( CURRENTGROUP (), 1 ) )
+RETURN
+    SELECTCOLUMNS (
+        NATURALLEFTOUTERJOIN ( ColumnInfo, TableCounts ),
+        "Table", [Table],
+        "Column Name", [Name],
+        "DataType", [DataType],
+        "Column Count", [# columns]
+    )
+ORDER BY
+    [Table],
+    [DataType],
+    [Column Name]
+
+// 3. Calculated Columns:
+EVALUATE
+SELECTCOLUMNS (
+    FILTER (
+        INFO.VIEW.COLUMNS (),
+        // [DataCategory] <> "RowNumber" && [Table] <> "xTables" && NOT ISBLANK ( [EXPRESSION] )
+        [DataCategory] <> "RowNumber"
+            && [Table] <> "xTables"
+            && [Type] = "Calculated" // Type has values Calculated and Data
+    ),
+    [Table],
+    "Calculated Column Name", [Name],
+    // [Description],
+    "DAX Expression", [Expression] // [DataCategory],
+    // [DataType],
+    // [IsHidden]
+)
+ORDER BY
+    [Table],
+    [Calculated Column Name]
+
+// 4. Calculated Tables:
+EVALUATE
+SELECTCOLUMNS (
+    FILTER (
+        INFO.VIEW.TABLES (),
+        ISBLANK ( [Expression] ) = FALSE () // Keep only calculated tables; TRUE() will show all regular tables
+    ),
+    "Calculated Table", [Name],
+    "Storage Mode", [StorageMode],
+    "Expression", [Expression]
+)
+ORDER BY [Calculated Table] ASC
+
+// 5. Measures:
+EVALUATE
+SELECTCOLUMNS (
+    INFO.VIEW.MEASURES (),
+    "Table", [Table],
+    "Measure Name", [Name],
+    "DAX Expression", [Expression],
+    [Description],
+    "Display Folder", [DisplayFolder],
+    [DataType],
+    [FormatString],
+    [State],
+    [IsHidden]
+)
+
+// 6. Parameters:
+EVALUATE
+SELECTCOLUMNS ( INFO.EXPRESSIONS (), "Parameter Name", [Name], [Expression] )
+
+// 7. Relationships:
+EVALUATE
+SELECTCOLUMNS (
+    INFO.VIEW.RELATIONSHIPS (),
+    [Name],
+    [Relationship],
+    [FromTable],
+    [FromColumn],
+    [FromCardinality],
+    [ToTable],
+    [ToColumn],
+    [ToCardinality],
+    [IsActive],
+    [CrossFilteringBehavior],
+    [RelyOnReferentialIntegrity],
+    [SecurityFilteringBehavior]
+)
+
+// 8. Relationships - from and to column datatypes
+EVALUATE
+VAR Cols =
+    SELECTCOLUMNS (
+        INFO.VIEW.COLUMNS (),
+        "ColumnID", [ID],
+        "TableName", [Table],
+        "ColumnName", [Name],
+        "DataType", [DataType]
+    )
+VAR FromCols =
+    SELECTCOLUMNS (
+        Cols,
+        "FromColumnID", [ColumnID],
+        "FromTable", [TableName],
+        "FromColumn", [ColumnName],
+        "FromDataType", [DataType]
+    )
+VAR ToCols =
+    SELECTCOLUMNS (
+        Cols,
+        "ToColumnID", [ColumnID],
+        "ToTable", [TableName],
+        "ToColumn", [ColumnName],
+        "ToDataType", [DataType]
+    )
+RETURN
+    SELECTCOLUMNS (
+        NATURALLEFTOUTERJOIN (
+            NATURALLEFTOUTERJOIN ( INFO.RELATIONSHIPS (), FromCols ),
+            ToCols
+        ),
+        "Relationship", [Name],
+        "FromTable", [FromTable],
+        "FromColumn", [FromColumn],
+        "FromDataType", [FromDataType],
+        "ToTable", [ToTable],
+        "ToColumn", [ToColumn],
+        "ToDataType", [ToDataType],
+        "DataTypeMatch", [FromDataType] = [ToDataType]
+    )
+
+// 9. Partitions:
+EVALUATE
+SELECTCOLUMNS (
+    FILTER (
+        INFO.PARTITIONS (),
+        [Type] <> 2 // Calculated Table Type = 2, Regular Table Type = 4
+    ),
+    "Table or Partition Name", [Name],
+    "Query", [QueryDefinition]
+)
+
+// 10. Partitions - with Row count
+EVALUATE
+VAR _partition =
+    SELECTCOLUMNS (
+        INFO.PARTITIONS (),
+        "TableID", [TableID],
+        "PartitionStorageID", [PartitionStorageID],
+        "PartitionName", [Name],
+        "Query", [QueryDefinition]
+    )
+VAR _table =
+    SELECTCOLUMNS (
+        INFO.VIEW.TABLES (),
+        "TableID", [ID],
+        "TableName", [Name],
+        "StorageMode", [StorageMode]
+    )
+RETURN
+    SELECTCOLUMNS (
+        NATURALINNERJOIN (
+            NATURALINNERJOIN ( _partition, INFO.SEGMENTMAPSTORAGES () ),
+            _table
+        ),
+        "TableName", [TableName],
+        "PartitionName", [PartitionName],
+        "StorageMode", [StorageMode],
+        "Query", [Query],
+        "Rows", [RecordCount]
+    )
+ORDER BY
+    [StorageMode],
+    [TableName],
+    [PartitionName]
+
+// 11. Roles
+EVALUATE
+VAR _Roles =
+    INFO.ROLES ()
+VAR ModelPermission =
+    DATATABLE (
+        "ModelPermission", INTEGER,
+        "PermissionDescription", STRING,
+        {
+            { 1, "None - The role has no access to the model." },
+            { 2, "Read - The role can read metadata and data of the model." },
+            { 3, "ReadRefresh - The role has read and refresh permission." },
+            { 4, "Refresh - The role can refresh the data and calculations in the model." },
+            { 5, "Administrator - The role can administer the model." }
+        }
+    )
+VAR _CombinedTable =
+    NATURALLEFTOUTERJOIN ( _Roles, ModelPermission )
+RETURN
+    SELECTCOLUMNS (
+        _CombinedTable,
+        "Role Name", [Name],
+        "Model Permission", [ModelPermission],
+        "Model Permission Desc", [PermissionDescription],
+        "ID", [ID],
+        "Model ID", [ModelID],
+        "Modified Time", [ModifiedTime]
+    )
+ORDER BY [Role Name]
+
+// 12. Table Permissions
+EVALUATE
+VAR _INFO =
+    INFO.TABLEPERMISSIONS ()
+VAR MetadataPermissionEnum =
+    DATATABLE (
+        "MetadataPermission", INTEGER,
+        "MetadataDescription", STRING,
+        {
+            { 0, "Default behavior - no access control is enforced" },
+            { 1, "Access to the data is restricted" },
+            { 2, "Access to the data is unrestricted" }
+        }
+    )
+VAR StateEnum =
+    DATATABLE (
+        "State", INTEGER,
+        "StateName", STRING,
+        {
+            { 1, "Ready" },
+            { 3, "NoData" },
+            { 4, "CalculationNeeded" },
+            { 5, "SemanticError" },
+            { 6, "EvaluationError" },
+            { 7, "DependencyError" },
+            { 8, "Incomplete" },
+            { 10, "ForceCalculationNeeded" }
+        }
+    )
+VAR _CombinedTable =
+    NATURALLEFTOUTERJOIN ( _INFO, MetadataPermissionEnum )
+VAR _CombinedTable2 =
+    NATURALLEFTOUTERJOIN ( _CombinedTable, StateEnum )
+VAR _ModelRoles =
+    SELECTCOLUMNS ( INFO.ROLES (), "RoleID", [ID], "Role Name", [Name] )
+VAR _ModelTables =
+    SELECTCOLUMNS ( INFO.TABLES (), "TableID", [ID], "Table Name", [Name] )
+VAR _CombinedTable3 =
+    NATURALLEFTOUTERJOIN ( _CombinedTable2, _ModelRoles )
+VAR _CombinedTable4 =
+    NATURALLEFTOUTERJOIN ( _CombinedTable3, _ModelTables )
+RETURN
+    SELECTCOLUMNS (
+        _CombinedTable4,
+        "Role Name", [Role Name],
+        "Table Name", [Table Name],
+        "Table Permission ID", [ID],
+        "Filter Expression", [FilterExpression],
+        "Metadata permission description", [MetadataDescription],
+        "State Name", [StateName],
+        "Modified Time", [ModifiedTime],
+        "Error Message", [ErrorMessage]
+    )
+ORDER BY [Table Permission ID]
+
+// 13. Column Permissions
+EVALUATE
+VAR _ColumnPermissions =
+    INFO.COLUMNPERMISSIONS ()
+VAR MetadataPermissionEnum =
+    DATATABLE (
+        "MetadataPermission", INTEGER,
+        "MetadataDescription", STRING,
+        {
+            { 0, "Default behavior - no access control is enforced" },
+            { 1, "Access to the data is restricted" },
+            { 2, "Access to the data is unrestricted" }
+        }
+    )
+VAR _TablePermissions =
+    SELECTCOLUMNS (
+        INFO.TABLEPERMISSIONS (),
+        "TablePermissionID", [ID],
+        "RoleID", [RoleID],
+        "TableID", [TableID]
+    )
+VAR _Roles =
+    SELECTCOLUMNS ( INFO.ROLES (), "RoleID", [ID], "Role Name", [Name] )
+VAR _Tables =
+    SELECTCOLUMNS ( INFO.TABLES (), "TableID", [ID], "Table Name", [Name] )
+VAR _Columns =
+    SELECTCOLUMNS (
+        INFO.COLUMNS (),
+        "ColumnID", [ID],
+        "Column Name", [ExplicitName]
+    )
+VAR _CombinedWithPermissionDesc =
+    NATURALLEFTOUTERJOIN ( _ColumnPermissions, MetadataPermissionEnum )
+VAR _CombinedWithTablePermissions =
+    NATURALLEFTOUTERJOIN ( _CombinedWithPermissionDesc, _TablePermissions )
+VAR _CombinedWithRoles =
+    NATURALLEFTOUTERJOIN ( _CombinedWithTablePermissions, _Roles )
+VAR _CombinedWithTables =
+    NATURALLEFTOUTERJOIN ( _CombinedWithRoles, _Tables )
+VAR _CombinedWithColumns =
+    NATURALLEFTOUTERJOIN ( _CombinedWithTables, _Columns )
+RETURN
+    SELECTCOLUMNS (
+        _CombinedWithColumns,
+        "Role Name", [Role Name],
+        "Table Name", [Table Name],
+        "Column Name", [Column Name],
+        "Metadata Permission", [MetadataPermission],
+        "Permission Definition", [MetadataDescription],
+        "Modified Time", [ModifiedTime]
+    )
+ORDER BY
+    [Role Name],
+    [Table Name],
+    [Column Name]
+
+// 14. Dependencies
+EVALUATE
+VAR _Dependencies =
+    INFO.DEPENDENCIES ()
+VAR _Tables =
+    SELECTCOLUMNS ( INFO.TABLES (), "TABLE", [Name], "Table ID", [ID] )
+VAR _ReferencedTables =
+    SELECTCOLUMNS (
+        INFO.TABLES (),
+        "REFERENCED_TABLE", [Name],
+        "Referenced Table ID", [ID]
+    )
+VAR _CombinedWithTables =
+    NATURALLEFTOUTERJOIN ( _Dependencies, _Tables )
+VAR _CombinedWithReferencedTables =
+    NATURALLEFTOUTERJOIN ( _CombinedWithTables, _ReferencedTables )
+RETURN
+    SELECTCOLUMNS (
+        _CombinedWithReferencedTables,
+        "Object Type", [OBJECT_TYPE],
+        "Table", [TABLE],
+        "Object", [OBJECT],
+        "Referenced Object Type", [REFERENCED_OBJECT_TYPE],
+        "Referenced Table", [REFERENCED_TABLE],
+        "Referenced Object", [REFERENCED_OBJECT]
+    )
+ORDER BY
+    [TABLE],
+    [OBJECT]
+
+// 15. Dependencies
+EVALUATE
+INFO.CALCDEPENDENCY ()
+
+// 16. Columns Catalog with Properties
+EVALUATE
+SELECTCOLUMNS (
+    FILTER ( INFO.VIEW.COLUMNS (), [Type] <> "RowNumber" && [Table] <> "xTables" ),
+    [Table],
+    "Column", [Name],
+    [Description],
+    "DAX formula", [Expression],
+    [DataType],
+    [Type],
+    [IsHidden],
+    [IsUnique],
+    [IsKey],
+    [IsNullable],
+    [SummarizeBy],
+    [SourceColumn],
+    [FormatString],
+    [IsAvailableInMDX],
+    [SortByColumn],
+    [DisplayFolder]
+)
+ORDER BY
+    [Table],
+    [DataType],
+    [Column]
+/* ################################################################################################ */
