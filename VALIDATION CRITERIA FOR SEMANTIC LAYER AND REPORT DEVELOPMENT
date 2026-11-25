@@ -1,0 +1,17 @@
+VALIDATION CRITERIA FOR SEMANTIC LAYER AND REPORT DEVELOPMENT
+
+​Checks for Semantic Layer Readiness:
+​1. All tables are included in Power BI as compared to MSTR.
+​2. All columns match the attributes list, with nothing missed.
+​3. All relationships are established between the code tables and fact tables, and no code table is left without a relationship.
+​4. For any columns to be used without existing code tables, code tables must be created on the Power BI (PBI) end.
+​5. All end-to-end testing is completed, including RLS and CLS.
+
+​Checks for Report Development Completeness:
+​1. The report look and feel (color, font, text size, and alignment) matches the MSTR report.
+​2. All display and filter columns/attributes are available in the report.
+​3. All slicer functionality works as expected.
+​4. Report graphs and other data match between Power BI (PBI) and MSTR.
+​5. All unwanted tables and columns are hidden by default.
+​6. All code tables are set to Import mode.
+​7. All metrics work seamlessly using Aggregate Awareness.
